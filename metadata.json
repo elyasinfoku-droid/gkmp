@@ -1,0 +1,6 @@
+{
+  "name": "SIUTASDIKDAS - Sistem Validasi Soal UTS/UAS & Google Apps Script Database Studio",
+  "description": "Sistem Validasi Soal UTS & UAS Pendidikan Dasar UST terintegrasi Google Sheets Database, Google Apps Script backend, dan panduan sematkan di Google Site.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

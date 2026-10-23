@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIUTASDIKDAS - Sistem Validasi Soal UTS & UAS Pendidikan Dasar UST</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-3"></div>
+
+    <!-- App Wrapper -->
+    <div id="app" class="flex-1 flex flex-col">
+        <!-- Rendered dynamically via JS -->
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+        &copy; 2026 Hak Cipta Pendidikan Dasar UST • SIUTASDIKDAS v2.5 (Google Sheets & Apps Script Simulated Engine)
+    </footer>
+
+    <script>
+        // --- MOCK DATABASE & INITIAL STATE ---
+        const DEFAULT_COURSES = [
+            { code: "UST 25013", name: "Pendidikan Ketamansiswaan" },
+            { code: "PSD 25101", name: "Filsafat Ilmu Pendidikan" },
+            { code: "PSD 25102", name: "Pengembangan Kurikulum Pendidikan Dasar" },
+            { code: "PSD 25103", name: "Psikologi Pendidikan dan Perkembangan" },
+            { code: "PSD 25104", name: "Statistik Pendidikan" },
+            { code: "PSD 25105", name: "Metodologi Penelitian Pendidikan" },
+            { code: "PSD 25106", name: "Penulisan Artikel Ilmiah" },
+            { code: "PSD 25107", name: "Manajemen dan Kebijakan Pendidikan Dasar" },
+            { code: "PSD 25208", name: "Pengembangan Pembelajaran IPA SD" },
+            { code: "PSD 25209", name: "Pengembangan Pembelajaran IPS SD" },
+            { code: "PSD 25210", name: "Pengembangan Pembelajaran Matematika SD" },
+            { code: "PSD 25211", name: "Pengembangan Pembelajaran Pendidikan Pancasila SD" },
+            { code: "PSD 25212", name: "Pengembangan Pembelajaran Bahasa dan Sastra Indonesia SD" },
+            { code: "PSD 25213", name: "Pengembangan Pembelajaran Seni Budaya dan Prakarya SD" },
+            { code: "PSD 25214", name: "Asesmen Pendidikan" },
+            { code: "PSD 25315", name: "Pengembangan Pembelajaran Berbasis Teknologi Digital di SD" },
+            { code: "PSD 25316", name: "Pendidikan Anak Berkebutuhan Khusus" },
+            { code: "PSD 25317", name: "Literasi Multidimensional" },
+            { code: "PSD 25318", name: "Pengembangan Pembelajaran Berbasis Muatan Lokal di SD" },
+            { code: "PSD 25319", name: "English for Children" },
+            { code: "PSD 25320", name: "Seminar Proposal Tugas Akhir Magister" },
+            { code: "PSD 25321", name: "Tugas Akhir Magister" }
+        ];
+
+        let state = {
+            currentUser: null, // { username, role: 'admin'|'dosen'|'validator', name, nidn }
+            users: [
+                { username: "GKMP", password: "135791", role: "admin", name: "Tim GKMP Pend. Dasar UST", nidn: "ADMIN01" },
+                { username: "0512018801", password: "123456", role: "dosen", name: "Dr. Ki Hajar Madya, M.Pd.", nidn: "0512018801", isValidator: true },
+                { username: "0525049002", password: "123456", role: "dosen", name: "Nyi Hj. Ratna Sari, M.Sc.", nidn: "0525049002", isValidator: true },
+                { username: "0508128503", password: "123456", role: "dosen", name: "Dr. Slamet Riyadi, M.Pd.", nidn: "0508128503", isValidator: false }
+            ],
+            submissions: [
+                {
+                    id: "SUB-101",
+                    dosenNidn: "0508128503",
+                    dosenName: "Dr. Slamet Riyadi, M.Pd.",
+                    courseCode: "PSD 25101",
+                    courseName: "Filsafat Ilmu Pendidikan",
+                    examType: "UTS",
+                    semester: "Genap 2025/2026",
+                    fileName: "Soal_UTS_Filsafat_Ilmu_Slamet.docx",
+                    fileData: "#",
+                    status: "Menunggu Penugasan Validator", // Menunggu Penugasan Validator, Menunggu Review Validator, Revisi, Menunggu Validasi Akhir Admin, Selesai Valid
+                    validatorNidn: "",
+                    validatorName: "",
+                    notes: "",
+                    revisionFileName: "",
+                    validationSheetName: "",
+                    notifications: [
+                        { time: "25 Feb 2026 10:00", text: "Soal berhasil diunggah dan diteruskan ke Admin GKMP." }
+                    ]
+                }
+            ],
+            activeTabAdmin: 'overview',
+            activeTabDosen: 'list'
+        };
+
+        // Load persisted state if exists
+        function loadState() {
+            const saved = localStorage.getItem('siutasdikdas_state');
+            if (saved) {
+                try { state = JSON.parse(saved); } catch(e) { console.error(e); }
+            }
+        }
+        function saveState() {
+            localStorage.setItem('siutasdikdas_state', JSON.stringify(state));
+        }
+
+        loadState();
+
+        // --- TOAST NOTIFICATIONS ---
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bgCol = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-amber-600';
+            toast.className = `${bgCol} text-white px-4 py-3 rounded-xl shadow-lg flex items-center justify-between gap-4 text-sm font-medium transition-all transform translate-y-2 opacity-0`;
+            toast.innerHTML = `<span><i class="fas fa-info-circle mr-2"></i>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.classList.remove('translate-y-2', 'opacity-0'); }, 50);
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // --- RENDER ROUTER ---
+        function render() {
+            const app = document.getElementById('app');
+            if (!state.currentUser) {
+                app.innerHTML = renderLogin();
+            } else if (state.currentUser.role === 'admin') {
+                app.innerHTML = renderAdminDashboard();
+            } else {
+                app.innerHTML = renderDosenDashboard();
+            }
+            saveState();
+        }
+
+        // --- LOGIN VIEW ---
+        function renderLogin() {
+            return `
+                <div class="flex-1 flex items-center justify-center p-4 bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100">
+                    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl border border-amber-200/60 p-8">
+                        <div class="text-center mb-8">
+                            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-600 text-white text-2xl font-bold shadow-lg shadow-amber-600/30 mb-4">
+                                <i class="fas fa-graduation-cap"></i>
+                            </div>
+                            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">SIUTASDIKDAS</h1>
+                            <p class="text-xs text-amber-700 font-semibold uppercase tracking-wider mt-1">Pendidikan Dasar Universitas Sarjanawiyata Tamansiswa</p>
+                            <p class="text-xs text-slate-500 mt-2">Sistem Validasi Soal UTS & UAS Terintegrasi</p>
+                        </div>
+
+                        <form onsubmit="handleLogin(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Username / NIDN</label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-user"></i></span>
+                                    <input type="text" id="login-user" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm outline-none" placeholder="Masukkan NIDN atau GKMP">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Password</label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fas fa-lock"></i></span>
+                                    <input type="password" id="login-pass" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm outline-none" placeholder="••••••••">
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2.5 rounded-xl shadow-md transition text-sm">
+                                <i class="fas fa-right-to-bracket mr-2"></i> Masuk Sistem
+                            </button>
+                        </form>
+
+                        <div class="mt-8 pt-6 border-t border-slate-100 text-xs text-slate-500 space-y-2 bg-amber-50/50 p-4 rounded-xl border border-amber-100">
+                            <p class="font-bold text-amber-800"><i class="fas fa-key mr-1"></i> Informasi Akun Demo:</p>
+                            <p><strong>Admin GKMP:</strong> Username: <code class="bg-white px-1.5 py-0.5 rounded border border-amber-200">GKMP</code> | Password: <code class="bg-white px-1.5 py-0.5 rounded border border-amber-200">135791</code></p>
+                            <p><strong>Dosen / Validator:</strong> NIDN masing-masing (Cth: <code class="bg-white px-1.5 py-0.5 rounded border border-amber-200">0512018801</code>) | Password: <code class="bg-white px-1.5 py-0.5 rounded border border-amber-200">123456</code></p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('login-user').value.trim();
+            const p = document.getElementById('login-pass').value.trim();
+
+            const found = state.users.find(x => x.username.toLowerCase() === u.toLowerCase() && x.password === p);
+            if (found) {
+                state.currentUser = found;
+                showToast(`Selamat datang, ${found.name}!`);
+                render();
+            } else {
+                showToast('Username atau password salah!', 'error');
+            }
+        }
+
+        function logout() {
+            state.currentUser = null;
+            showToast('Berhasil keluar sistem.', 'info');
+            render();
+        }
+
+        // --- ADMIN DASHBOARD ---
+        function renderAdminDashboard() {
+            const subs = state.submissions;
+            const validators = state.users.filter(u => u.isValidator);
+
+            return `
+                <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold">
+                                <i class="fas fa-shield-halved"></i>
+                            </div>
+                            <div>
+                                <h1 class="font-bold text-slate-800 text-base">SIUTASDIKDAS - Admin GKMP</h1>
+                                <p class="text-xs text-slate-500">Panel Kontrol & Penugasan Validator</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="text-xs bg-amber-100 text-amber-800 font-semibold px-3 py-1 rounded-full"><i class="fas fa-user-shield mr-1"></i> Admin GKMP</span>
+                            <button onclick="logout()" class="text-slate-600 hover:text-rose-600 text-sm font-medium transition"><i class="fas fa-power-off mr-1"></i> Keluar</button>
+                        </div>
+                    </div>
+                    <div class="max-w-7xl mx-auto px-4 flex gap-6 border-t border-slate-100 text-sm">
+                        <button onclick="setAdminTab('overview')" class="py-3 font-medium border-b-2 ${state.activeTabAdmin === 'overview' ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-600'}"><i class="fas fa-chart-pie mr-2"></i> Dashboard & Soal Masuk</button>
+                        <button onclick="setAdminTab('users')" class="py-3 font-medium border-b-2 ${state.activeTabAdmin === 'users' ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-600'}"><i class="fas fa-users-gear mr-2"></i> Kelola User & Validator</button>
+                    </div>
+                </header>
+
+                <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
+                    ${state.activeTabAdmin === 'overview' ? `
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-slate-500 text-xs font-semibold uppercase">Total Pengajuan</div>
+                                <div class="text-2xl font-bold text-slate-800 mt-1">${subs.length}</div>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-amber-600 text-xs font-semibold uppercase">Menunggu Validator</div>
+                                <div class="text-2xl font-bold text-amber-600 mt-1">${subs.filter(s => s.status.includes('Validator')).length}</div>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-rose-600 text-xs font-semibold uppercase">Revisi / Proses</div>
+                                <div class="text-2xl font-bold text-rose-600 mt-1">${subs.filter(s => s.status === 'Revisi').length}</div>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-emerald-600 text-xs font-semibold uppercase">Selesai Valid</div>
+                                <div class="text-2xl font-bold text-emerald-600 mt-1">${subs.filter(s => s.status === 'Selesai Valid').length}</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                                <h3 class="font-bold text-slate-800"><i class="fas fa-list-check mr-2 text-amber-600"></i> Daftar Soal UTS & UAS Masuk</h3>
+                                <span class="text-xs text-slate-500">Sinkronisasi Google Sheets Aktif</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50 text-slate-600 text-xs uppercase font-semibold border-b border-slate-200">
+                                            <th class="p-4">ID / Dosen</th>
+                                            <th class="p-4">Mata Kuliah & Jenis</th>
+                                            <th class="p-4">File Soal</th>
+                                            <th class="p-4">Validator Bertugas</th>
+                                            <th class="p-4">Status & Catatan</th>
+                                            <th class="p-4 text-center">Aksi Admin</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 text-sm">
+                                        ${subs.length === 0 ? `<tr><td colspan="6" class="p-6 text-center text-slate-400">Belum ada soal diunggah.</td></tr>` : 
+                                            subs.map(s => `
+                                                <tr class="hover:bg-slate-50/50">
+                                                    <td class="p-4">
+                                                        <div class="font-bold text-slate-800">${s.id}</div>
+                                                        <div class="text-xs text-slate-500">${s.dosenName}</div>
+                                                        <div class="text-[10px] text-slate-400">NIDN: ${s.dosenNidn}</div>
+                                                    </td>
+                                                    <td class="p-4">
+                                                        <div class="font-medium text-slate-800">${s.courseName}</div>
+                                                        <div class="text-xs text-amber-700 font-semibold">${s.courseCode} • ${s.examType} (${s.semester})</div>
+                                                    </td>
+                                                    <td class="p-4">
+                                                        <a href="#" onclick="downloadFile('${s.fileName}', '${s.fileData}')" class="inline-flex items-center gap-1.5 text-amber-600 hover:text-amber-700 text-xs font-semibold bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200"><i class="fas fa-file-arrow-down"></i> ${s.fileName}</a>
+                                                        ${s.revisionFileName ? `<div class="mt-1"><a href="#" onclick="downloadFile('${s.revisionFileName}', '${s.fileData}')" class="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-semibold bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200"><i class="fas fa-file-arrow-down"></i> Revisi: ${s.revisionFileName}</a></div>` : ''}
+                                                    </td>
+                                                    <td class="p-4">
+                                                        ${s.validatorName ? `<span class="text-xs bg-slate-100 text-slate-700 font-medium px-2.5 py-1 rounded-lg"><i class="fas fa-user-check mr-1 text-emerald-600"></i> ${s.validatorName}</span>` : `<span class="text-xs text-rose-500 font-semibold bg-rose-50 px-2 py-1 rounded">Belum Ditunjuk</span>`}
+                                                    </td>
+                                                    <td class="p-4">
+                                                        <span class="inline-block px-2.5 py-1 rounded-full text-xs font-semibold 
+                                                            ${s.status.includes('Valid') && s.status !== 'Menunggu Validasi Akhir Admin' ? 'bg-emerald-100 text-emerald-800' : 
+                                                              s.status === 'Revisi' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}">
+                                                            ${s.status}
+                                                        </span>
+                                                        ${s.notes ? `<div class="text-xs text-slate-500 mt-1 italic">"${s.notes}"</div>` : ''}
+                                                    </td>
+                                                    <td class="p-4 text-center">
+                                                        <div class="flex items-center justify-center gap-2">
+                                                            ${s.status.includes('Menunggu Penugasan Validator') ? `
+                                                                <button onclick="openAssignModal('${s.id}')" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-medium shadow transition">
+                                                                    <i class="fas fa-user-plus mr-1"></i> Tunjuk Validator
+                                                                </button>
+                                                            ` : ''}
+                                                            ${s.status === 'Menunggu Validasi Akhir Admin' ? `
+                                                                <button onclick="openFinalizeModal('${s.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-medium shadow transition">
+                                                                    <i class="fas fa-circle-check mr-1"></i> Cek & Teruskan Soal
+                                                                </button>
+                                                            ` : ''}
+                                                            <button onclick="viewHistory('${s.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-medium transition" title="Riwayat Notifikasi">
+                                                                <i class="fas fa-clock-rotate-left"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                            <div class="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 class="font-bold text-slate-800 text-lg">Manajemen User & Penunjukkan Validator</h3>
+                                    <p class="text-xs text-slate-500">Tambah Dosen atau tetapkan status validator pengampu.</p>
+                                </div>
+                                <button onclick="openAddUserModal()" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-medium shadow transition">
+                                    <i class="fas fa-user-plus mr-2"></i> Tambah User Baru
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50 text-slate-600 text-xs uppercase font-semibold border-b border-slate-200">
+                                            <th class="p-4">Nama Lengkap</th>
+                                            <th class="p-4">Username / NIDN</th>
+                                            <th class="p-4">Role Sistem</th>
+                                            <th class="p-4">Status Validator</th>
+                                            <th class="p-4 text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 text-sm">
+                                        ${state.users.map(u => `
+                                            <tr>
+                                                <td class="p-4 font-semibold text-slate-800">${u.name}</td>
+                                                <td class="p-4 text-slate-600">${u.username}</td>
+                                                <td class="p-4"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}">${u.role.toUpperCase()}</span></td>
+                                                <td class="p-4">
+                                                    ${u.role === 'dosen' ? `
+                                                        <label class="relative inline-flex items-center cursor-pointer">
+                                                            <input type="checkbox" ${u.isValidator ? 'checked' : ''} onchange="toggleValidator('${u.username}')" class="sr-only peer">
+                                                            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                                                            <span class="ml-2 text-xs font-medium text-slate-700">${u.isValidator ? 'Validator Aktif' : 'Bukan Validator'}</span>
+                                                        </label>
+                                                    ` : `<span class="text-xs text-slate-400">Admin Utama</span>`}
+                                                </td>
+                                                <td class="p-4 text-center">
+                                                    ${u.role !== 'admin' ? `<button onclick="deleteUser('${u.username}')" class="text-rose-500 hover:text-rose-700 p-2"><i class="fas fa-trash"></i></button>` : '-'}
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `}
+                </main>
+
+                <!-- Modal Assign Validator -->
+                <div id="assign-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+                    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+                        <h3 class="text-lg font-bold text-slate-800 mb-2">Tunjuk Validator Soal</h3>
+                        <p class="text-xs text-slate-500 mb-4">Pilih Dosen Validator untuk mereview soal yang diunggah.</p>
+                        <input type="hidden" id="assign-sub-id">
+                        <div class="mb-4">
+                            <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Pilih Validator</label>
+                            <select id="assign-validator-select" class="w-full p-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                                ${validators.map(v => `<option value="${v.nidn}">${v.name} (${v.username})</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="flex justify-end gap-3">
+                            <button onclick="closeAssignModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Batal</button>
+                            <button onclick="submitAssignValidator()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-medium shadow">Simpan & Kirim Notifikasi</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Finalize Admin (Cek Lembar Validasi) -->
+                <div id="finalize-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+                    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+                        <h3 class="text-lg font-bold text-slate-800 mb-2">Verifikasi & Serah Terima Lembar Validasi</h3>
+                        <p class="text-xs text-slate-500 mb-4">Validator telah menyatakan valid dan melampirkan lembar validasi. Admin memeriksa kelengkapan sebelum diteruskan ke Dosen.</p>
+                        <input type="hidden" id="finalize-sub-id">
+                        
+                        <div class="bg-amber-50 p-4 rounded-xl border border-amber-200 mb-4 text-xs space-y-2">
+                            <p class="font-semibold text-amber-800"><i class="fas fa-file-shield mr-1"></i> Lembar Validasi dari Validator:</p>
+                            <div id="finalize-validation-file-info" class="text-slate-700 font-medium"></div>
+                        </div>
+
+                        <div class="flex justify-end gap-3">
+                            <button onclick="closeFinalizeModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Batal</button>
+                            <button onclick="submitFinalizeAdmin()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow"><i class="fas fa-paper-plane mr-1"></i> Teruskan Soal Valid & Lembar Validasi ke Dosen</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Add User -->
+                <div id="adduser-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+                    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+                        <h3 class="text-lg font-bold text-slate-800 mb-4">Tambah User / Dosen Baru</h3>
+                        <form onsubmit="saveNewUser(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Nama Lengkap & Gelar</label>
+                                <input type="text" id="new-name" required class="w-full p-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-amber-500" placeholder="Cth: Dr. Ahmad Dahlan, M.Pd.">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">NIDN (Digunakan untuk Login Dosen)</label>
+                                <input type="text" id="new-nidn" required class="w-full p-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-amber-500" placeholder="Cth: 0511029001">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Password Default</label>
+                                <input type="text" id="new-pass" value="123456" required class="w-full p-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-amber-500">
+                            </div>
+                            <div class="flex items-center gap-2 pt-2">
+                                <input type="checkbox" id="new-isvalidator" class="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500">
+                                <label for="new-isvalidator" class="text-sm font-medium text-slate-700">Tugaskan juga sebagai Validator Soal</label>
+                            </div>
+                            <div class="flex justify-end gap-3 pt-4">
+                                <button type="button" onclick="closeAddUserModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Batal</button>
+                                <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-medium shadow">Simpan User</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setAdminTab(tab) {
+            state.activeTabAdmin = tab;
+            render();
+        }
+
+        function openAssignModal(subId) {
+            document.getElementById('assign-sub-id').value = subId;
+            document.getElementById('assign-modal').classList.remove('hidden');
+        }
+        function closeAssignModal() {
+            document.getElementById('assign-modal').classList.add('hidden');
+        }
+        function submitAssignValidator() {
+            const subId = document.getElementById('assign-sub-id').value;
+            const validatorNidn = document.getElementById('assign-validator-select').value;
+            const validatorObj = state.users.find(u => u.nidn === validatorNidn);
+
+            const sub = state.submissions.find(s => s.id === subId);
+            if (sub && validatorObj) {
+                sub.validatorNidn = validatorObj.nidn;
+                sub.validatorName = validatorObj.name;
+                sub.status = "Menunggu Review Validator";
+                sub.notifications.push({
+                    time: new Date().toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}),
+                    text: `Soal ditugaskan ke Validator: ${validatorObj.name}. Notifikasi terkirim ke validator dan dosen.`
+                });
+                showToast(`Validator ${validatorObj.name} berhasil ditugaskan!`);
+                closeAssignModal();
+                render();
+            }
+        }
+
+        function openFinalizeModal(subId) {
+            const sub = state.submissions.find(s => s.id === subId);
+            document.getElementById('finalize-sub-id').value = subId;
+            document.getElementById('finalize-validation-file-info').innerHTML = `
+                <i class="fas fa-file-pdf text-rose-600 mr-1"></i> ${sub.validationSheetName || 'Lembar_Validasi_Default.pdf'} <br>
+                <span class="text-[10px] text-slate-500">Validator: ${sub.validatorName}</span>
+            `;
+            document.getElementById('finalize-modal').classList.remove('hidden');
+        }
+        function closeFinalizeModal() {
+            document.getElementById('finalize-modal').classList.add('hidden');
+        }
+        function submitFinalizeAdmin() {
+            const subId = document.getElementById('finalize-sub-id').value;
+            const sub = state.submissions.find(s => s.id === subId);
+            if (sub) {
+                sub.status = "Selesai Valid";
+                sub.notifications.push({
+                    time: new Date().toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}),
+                    text: `Admin GKMP telah memeriksa lembar validasi. Soal dinyatakan Valid & Lengkap dan dikirimkan kembali ke Dosen pengampu.`
+                });
+                showToast('Soal dan lembar validasi lengkap berhasil diteruskan ke Dosen!');
+                closeFinalizeModal();
+                render();
+            }
+        }
+
+        function openAddUserModal() {
+            document.getElementById('adduser-modal').classList.remove('hidden');
+        }
+        function closeAddUserModal() {
+            document.getElementById('adduser-modal').classList.add('hidden');
+        }
+        function saveNewUser(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-name').value.trim();
+            const nidn = document.getElementById('new-nidn').value.trim();
+            const password = document.getElementById('new-pass').value.trim();
+            const isValidator = document.getElementById('new-isvalidator').checked;
+
+            if (state.users.some(u => u.username.toLowerCase() === nidn.toLowerCase())) {
+                showToast('NIDN / Username sudah terdaftar!', 'error');
+                return;
+            }
+
+            state.users.push({
+                username: nidn,
+                password: password,
+                role: 'dosen',
+                name: name,
+                nidn: nidn,
+                isValidator: isValidator
+            });
+
+            showToast(`User ${name} berhasil ditambahkan!`);
+            closeAddUserModal();
+            render();
+        }
+
+        function toggleValidator(username) {
+            const user = state.users.find(u => u.username === username);
+            if (user) {
+                user.isValidator = !user.isValidator;
+                showToast(`Status validator ${user.name} diperbarui.`);
+                render();
+            }
+        }
+
+        function deleteUser(username) {
+            if (confirm('Hapus user ini dari sistem?')) {
+                state.users = state.users.filter(u => u.username !== username);
+                showToast('User berhasil dihapus.');
+                render();
+            }
+        }
+
+
+        // --- DOSEN & VALIDATOR DASHBOARD ---
+        function renderDosenDashboard() {
+            const user = state.currentUser;
+            const mySubs = state.submissions.filter(s => s.dosenNidn === user.nidn);
+            const assignedSubs = state.submissions.filter(s => s.validatorNidn === user.nidn);
+
+            return `
+                <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold">
+                                <i class="fas fa-chalkboard-user"></i>
+                            </div>
+                            <div>
+                                <h1 class="font-bold text-slate-800 text-base">SIUTASDIKDAS - Dosen Portal</h1>
+                                <p class="text-xs text-slate-500">${user.name} (NIDN: ${user.nidn})</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            ${user.isValidator ? `<span class="text-xs bg-purple-100 text-purple-800 font-semibold px-3 py-1 rounded-full"><i class="fas fa-award mr-1"></i> Dosen Validator Aktif</span>` : ''}
+                            <button onclick="logout()" class="text-slate-600 hover:text-rose-600 text-sm font-medium transition"><i class="fas fa-power-off mr-1"></i> Keluar</button>
+                        </div>
+                    </div>
+                    <div class="max-w-7xl mx-auto px-4 flex gap-6 border-t border-slate-100 text-sm">
+                        <button onclick="setDosenTab('list')" class="py-3 font-medium border-b-2 ${state.activeTabDosen === 'list' ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-600'}"><i class="fas fa-file-lines mr-2"></i> Pengajuan Soal UTS / UAS Saya</button>
+                        ${user.isValidator ? `
+                            <button onclick="setDosenTab('validator')" class="py-3 font-medium border-b-2 ${state.activeTabDosen === 'validator' ? 'border-amber-600 text-amber-700' : 'border-transparent text-slate-600'}">
+                                <i class="fas fa-check-to-slot mr-2"></i> Tugas Review Validator 
+                                <span class="ml-1 bg-amber-600 text-white text-[10px] px-2 py-0.5 rounded-full">${assignedSubs.filter(s => s.status === 'Menunggu Review Validator').length}</span>
+                            </button>
+                        ` : ''}
+                    </div>
+                </header>
+
+                <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
+                    ${state.activeTabDosen === 'list' ? `
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <!-- Unggah Soal Baru Card -->
+                            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 h-fit">
+                                <h3 class="font-bold text-slate-800 text-base mb-1"><i class="fas fa-cloud-arrow-up mr-2 text-amber-600"></i> Unggah Naskah Soal</h3>
+                                <p class="text-xs text-slate-500 mb-4">Unggah dokumen naskah soal UTS atau UAS langsung ke sistem (bukan link).</p>
+                                
+                                <form onsubmit="handleUploadSoal(event)" class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Mata Kuliah Pengampu</label>
+                                        <select id="upload-course" required class="w-full p-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                                            <option value="">-- Pilih Mata Kuliah UST --</option>
+                                            ${DEFAULT_COURSES.map(c => `<option value="${c.code}|${c.name}">${c.code} - ${c.name}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Jenis Ujian</label>
+                                            <select id="upload-type" required class="w-full p-2.5 rounded-xl border border-slate-300 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                                                <option value="UTS">UTS (Ujian Tengah Semester)</option>
+                                                <option value="UAS">UAS (Ujian Akhir Semester)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Semester</label>
+                                            <input type="text" id="upload-semester" value="Genap 2025/2026" required class="w-full p-2.5 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-amber-500">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">File Soal (Word / PDF)</label>
+                                        <input type="file" id="upload-file" required accept=".doc,.docx,.pdf" class="w-full p-2 rounded-xl border border-slate-300 text-xs bg-slate-50 text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-600 file:text-white hover:file:bg-amber-700">
+                                    </div>
+                                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-2.5 rounded-xl shadow-md transition text-sm">
+                                        <i class="fas fa-upload mr-2"></i> Kirim Soal ke Admin
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- List Pengajuan Saya -->
+                            <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                                <h3 class="font-bold text-slate-800 text-base mb-4"><i class="fas fa-folder-open mr-2 text-amber-600"></i> Riwayat Pengajuan Soal Anda</h3>
+                                
+                                <div class="space-y-4">
+                                    ${mySubs.length === 0 ? `<div class="text-center py-12 text-slate-400 text-sm">Belum ada soal yang diunggah.</div>` :
+                                        mySubs.map(s => `
+                                            <div class="border border-slate-200 rounded-2xl p-5 hover:border-amber-300 transition bg-slate-50/50">
+                                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                                                    <div>
+                                                        <span class="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full">${s.courseCode}</span>
+                                                        <h4 class="font-bold text-slate-800 text-base mt-1">${s.courseName} (${s.examType})</h4>
+                                                    </div>
+                                                    <span class="px-3 py-1 rounded-full text-xs font-semibold 
+                                                        ${s.status === 'Selesai Valid' ? 'bg-emerald-100 text-emerald-800' : 
+                                                          s.status === 'Revisi' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}">
+                                                        ${s.status}
+                                                    </span>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-600 mb-4 bg-white p-3 rounded-xl border border-slate-100">
+                                                    <div><strong class="text-slate-700">Validator:</strong> ${s.validatorName || 'Menunggu penunjukan Admin'}</div>
+                                                    <div><strong class="text-slate-700">File Utama:</strong> <a href="#" onclick="downloadFile('${s.fileName}', '${s.fileData}')" class="text-amber-600 font-semibold underline">${s.fileName}</a></div>
+                                                    ${s.revisionFileName ? `<div><strong class="text-slate-700">File Revisi:</strong> <a href="#" onclick="downloadFile('${s.revisionFileName}', '${s.fileData}')" class="text-blue-600 font-semibold underline">${s.revisionFileName}</a></div>` : ''}
+                                                    ${s.status === 'Selesai Valid' ? `
+                                                        <div class="col-span-full bg-emerald-50 p-4 rounded-xl border border-emerald-200 text-emerald-800 space-y-3 mt-2">
+                                                            <div class="flex items-center justify-between">
+                                                                <span><i class="fas fa-circle-check text-emerald-600 mr-1 text-sm"></i> <strong>Soal Telah Divalidasi & Disetujui</strong></span>
+                                                                <span class="text-[11px] text-emerald-700 font-medium bg-emerald-100 px-2 py-0.5 rounded-full">Selesai & Lengkap</span>
+                                                            </div>
+                                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-emerald-200/60">
+                                                                <button onclick="downloadFile('${s.revisionFileName || s.fileName}', '${s.fileData}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-semibold shadow flex items-center justify-center gap-1.5 transition">
+                                                                    <i class="fas fa-file-arrow-down"></i> Unduh Soal Valid (${s.revisionFileName || s.fileName})
+                                                                </button>
+                                                                <button onclick="downloadFile('${s.validationSheetName || 'Lembar_Validasi.pdf'}', '${s.validationSheetData || 'Simulasi Lembar Validasi TTD Validator'}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-semibold shadow flex items-center justify-center gap-1.5 transition">
+                                                                    <i class="fas fa-file-pdf"></i> Unduh Lembar Validasi (${s.validationSheetName || 'Lembar_Validasi.pdf'})
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+
+                                                ${s.notes ? `
+                                                    <div class="mb-4 bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs text-rose-800">
+                                                        <strong><i class="fas fa-comment-dots mr-1"></i> Catatan Revisi dari Validator:</strong>
+                                                        <p class="mt-1">${s.notes}</p>
+                                                    </div>
+                                                ` : ''}
+
+                                                ${s.status === 'Revisi' ? `
+                                                    <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                                                        <h5 class="text-xs font-bold text-amber-800 uppercase mb-2"><i class="fas fa-upload mr-1"></i> Unggah File Revisi Soal</h5>
+                                                        <form onsubmit="handleUploadRevision(event, '${s.id}')" class="flex gap-2">
+                                                            <input type="file" id="rev-file-${s.id}" required accept=".doc,.docx,.pdf" class="flex-1 p-1.5 bg-white rounded-lg border border-amber-300 text-xs">
+                                                            <button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow">Kirim Revisi</button>
+                                                        </form>
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+                                        `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    ` : `
+                        <!-- Validator Panel -->
+                        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                            <h3 class="font-bold text-slate-800 text-lg mb-1"><i class="fas fa-clipboard-check mr-2 text-amber-600"></i> Panel Review Validator Soal</h3>
+                            <p class="text-xs text-slate-500 mb-6">Periksa naskah soal. Berikan catatan Revisi atau klik Valid dan unggah Lembar Validasi jika sudah sesuai.</p>
+
+                            <div class="space-y-6">
+                                ${assignedSubs.length === 0 ? `<div class="text-center py-12 text-slate-400 text-sm">Belum ada tugas soal yang perlu direview.</div>` :
+                                    assignedSubs.map(s => `
+                                        <div class="border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
+                                            <div class="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <span class="text-xs font-bold text-purple-700 bg-purple-100 px-2.5 py-1 rounded-full">${s.courseCode}</span>
+                                                    <h4 class="font-bold text-slate-800 text-lg mt-1">${s.courseName} (${s.examType})</h4>
+                                                    <p class="text-xs text-slate-500 mt-0.5">Dosen Pengampu: <strong>${s.dosenName}</strong></p>
+                                                </div>
+                                                <span class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">${s.status}</span>
+                                            </div>
+
+                                            <div class="bg-white p-4 rounded-xl border border-slate-200 mb-4 flex items-center justify-between">
+                                                <div>
+                                                    <span class="text-xs font-semibold text-slate-600 block mb-1">Berkas Naskah Soal:</span>
+                                                    <a href="#" onclick="downloadFile('${s.revisionFileName || s.fileName}', '${s.fileData}')" class="text-amber-600 font-semibold text-sm hover:underline"><i class="fas fa-file-arrow-down mr-1"></i> ${s.revisionFileName || s.fileName}</a>
+                                                </div>
+                                                <span class="text-xs text-slate-400">Diunggah: ${s.semester}</span>
+                                            </div>
+
+                                            <!-- Form Validasi / Revisi Action -->
+                                            <div class="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+                                                <h5 class="text-xs font-bold uppercase text-slate-700 tracking-wider"><i class="fas fa-pen-nib mr-1 text-amber-600"></i> Keputusan Validator</h5>
+                                                
+                                                <!-- Template Lembar Validasi Download Link -->
+                                                <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between text-xs">
+                                                    <div>
+                                                        <span class="font-bold text-blue-900 block"><i class="fas fa-file-word mr-1"></i> Template Lembar Validasi Resmi:</span>
+                                                        <span class="text-blue-700">Unduh lembar validasi standar Program Studi Pendidikan Dasar UST sebelum mengisi & menandatanganinya.</span>
+                                                    </div>
+                                                    <a href="https://docs.google.com/document/d/1yLXfxsZ8EbWe96g-X36KifF3zSd5WsHp/edit?usp=sharing&ouid=107839986455260993727&rtpof=true&sd=true" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-semibold whitespace-nowrap shadow transition">
+                                                        <i class="fas fa-download mr-1"></i> Unduh Template Lembar Validasi
+                                                    </a>
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Catatan / Komentar (Wajib diisi jika Revisi):</label>
+                                                    <textarea id="val-notes-${s.id}" rows="2" class="w-full p-3 rounded-xl border border-slate-300 text-sm outline-none focus:ring-2 focus:ring-amber-500" placeholder="Tuliskan masukan atau bagian soal yang perlu direvisi...">${s.notes || ''}</textarea>
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Unggah Lembar Validasi Bertandatangan (PDF / Word):</label>
+                                                    <input type="file" id="val-sheet-${s.id}" accept=".pdf,.doc,.docx" class="w-full p-2 rounded-xl border border-slate-300 text-xs bg-slate-50 text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700" onchange="previewValidationSheet(event, '${s.id}')">
+                                                    <span class="text-[10px] text-slate-500 mt-1 block">Unggah file hasil scan atau tanda tangan digital lembar validasi yang telah diisi. File akan langsung tersimpan di database lokal sistem.</span>
+                                                    <input type="hidden" id="val-sheet-data-${s.id}" value="${s.validationSheetData || ''}">
+                                                    <input type="hidden" id="val-sheet-name-${s.id}" value="${s.validationSheetName || ''}">
+                                                </div>
+
+                                                <div class="flex gap-3 pt-2">
+                                                    <button onclick="handleValidatorDecision('${s.id}', 'revisi')" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-sm font-semibold shadow transition">
+                                                        <i class="fas fa-rotate-left mr-1"></i> Kirim Revisi (Belum Sesuai)
+                                                    </button>
+                                                    <button onclick="handleValidatorDecision('${s.id}', 'valid')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-sm font-semibold shadow transition">
+                                                        <i class="fas fa-circle-check mr-1"></i> Valid (Sudah Sesuai & Lengkap)
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                            </div>
+                        </div>
+                    `}
+                </main>
+            `;
+        }
+
+        function setDosenTab(tab) {
+            state.activeTabDosen = tab;
+            render();
+        }
+
+        function handleUploadSoal(e) {
+            e.preventDefault();
+            const courseVal = document.getElementById('upload-course').value;
+            const [courseCode, courseName] = courseVal.split('|');
+            const examType = document.getElementById('upload-type').value;
+            const semester = document.getElementById('upload-semester').value;
+            const fileInput = document.getElementById('upload-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showToast('Pilih file soal terlebih dahulu!', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const base64Content = event.target.result;
+                const newSub = {
+                    id: "SUB-" + Math.floor(100 + Math.random() * 900),
+                    dosenNidn: state.currentUser.nidn,
+                    dosenName: state.currentUser.name,
+                    courseCode: courseCode,
+                    courseName: courseName,
+                    examType: examType,
+                    semester: semester,
+                    fileName: file.name,
+                    fileData: base64Content,
+                    status: "Menunggu Penugasan Validator",
+                    validatorNidn: "",
+                    validatorName: "",
+                    notes: "",
+                    revisionFileName: "",
+                    validationSheetName: "",
+                    validationSheetData: "",
+                    notifications: [
+                        { time: new Date().toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}), text: "Soal berhasil diunggah langsung ke sistem dan diteruskan ke Admin GKMP." }
+                    ]
+                };
+
+                state.submissions.unshift(newSub);
+                showToast('Naskah soal berhasil diunggah dan disimpan ke database!');
+                render();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function handleUploadRevision(e, subId) {
+            e.preventDefault();
+            const fileInput = document.getElementById(`rev-file-${subId}`);
+            const file = fileInput.files[0];
+            if (!file) {
+                showToast('Pilih file revisi!', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const base64Content = event.target.result;
+                const sub = state.submissions.find(s => s.id === subId);
+                if (sub) {
+                    sub.revisionFileName = file.name;
+                    sub.fileData = base64Content;
+                    sub.status = "Menunggu Review Validator";
+                    sub.notifications.push({
+                        time: new Date().toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}),
+                        text: `Dosen mengunggah file revisi (${file.name}) dan diteruskan kembali ke Validator.`
+                    });
+                    showToast('File revisi berhasil diunggah dan disimpan!');
+                    render();
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function previewValidationSheet(e, subId) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    document.getElementById(`val-sheet-data-${subId}`).value = event.target.result;
+                    document.getElementById(`val-sheet-name-${subId}`).value = file.name;
+                    showToast(`Berkas ${file.name} berhasil dibaca dan disiapkan untuk disimpan.`);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function handleValidatorDecision(subId, decision) {
+            const notes = document.getElementById(`val-notes-${subId}`).value.trim();
+            const sheetName = document.getElementById(`val-sheet-name-${subId}`).value;
+            const sheetData = document.getElementById(`val-sheet-data-${subId}`).value;
+            const sub = state.submissions.find(s => s.id === subId);
+
+            if (decision === 'revisi' && !notes) {
+                showToast('Catatan revisi wajib diisi jika soal belum sesuai!', 'error');
+                return;
+            }
+
+            if (decision === 'valid') {
+                if (!sheetName || !sheetData) {
+                    showToast('Harap unggah file lembar validasi bertanda tangan terlebih dahulu agar tersimpan di database!', 'error');
+                    return;
+                }
+                sub.validationSheetName = sheetName;
+                sub.validationSheetData = sheetData;
+                sub.status = "Menunggu Validasi Akhir Admin";
+                sub.notes = notes;
+                sub.notifications.push({
+                    time: new Date().toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}),
+                    text: `Validator menyatakan VALID dan melampirkan Lembar Validasi (${sheetName}). Diteruskan ke Admin GKMP.`
+                });
+                showToast('Keputusan VALID dan Lembar Validasi berhasil tersimpan di database!');
+            } else {
+                sub.status = "Revisi";
+                sub.notes = notes;
+                sub.notifications.push({
+                    time: new Date().toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}),
+                    text: `Validator meminta REVISI. Catatan: "${notes}". Notifikasi terkirim ke Dosen.`
+                });
+                showToast('Status Revisi dikirimkan ke Dosen pengampu.');
+            }
+
+            render();
+        }
+
+        function downloadFile(name, data) {
+            if (!data || data === "#" || data === "simulated_base64_data") {
+                showToast(`Mengunduh berkas: ${name}`);
+                const element = document.createElement('a');
+                const file = new Blob([`Simulasi Konten Berkas Resmi UST\nNama File: ${name}\nHak Cipta Pendidikan Dasar UST`], {type: 'text/plain'});
+                element.href = URL.createObjectURL(file);
+                element.download = name;
+                document.body.appendChild(element);
+                element.click();
+                document.body.removeChild(element);
+                return;
+            }
+
+            showToast(`Mengunduh berkas: ${name}`);
+            const element = document.createElement('a');
+            element.href = data;
+            element.download = name;
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        function viewHistory(subId) {
+            const sub = state.submissions.find(s => s.id === subId);
+            const historyText = sub.notifications.map(n => `[${n.time}] ${n.text}`).join('\n\n');
+            alert(`Riwayat & Log Notifikasi [${sub.id}]:\n\n` + historyText);
+        }
+
+        // Initial Render
+        render();
+    </script>
+</body>
+</html>

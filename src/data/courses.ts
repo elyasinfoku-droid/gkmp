@@ -1,0 +1,26 @@
+import { Course } from '../types';
+
+export const DEFAULT_COURSES: Course[] = [
+  { code: 'UST 25013', name: 'Pendidikan Ketamansiswaan', sks: 2, semester: '1' },
+  { code: 'PSD 25101', name: 'Filsafat Ilmu Pendidikan', sks: 3, semester: '1' },
+  { code: 'PSD 25102', name: 'Pengembangan Kurikulum Pendidikan Dasar', sks: 3, semester: '1' },
+  { code: 'PSD 25103', name: 'Psikologi Pendidikan dan Perkembangan', sks: 3, semester: '1' },
+  { code: 'PSD 25104', name: 'Statistik Pendidikan', sks: 3, semester: '1' },
+  { code: 'PSD 25105', name: 'Metodologi Penelitian Pendidikan', sks: 3, semester: '2' },
+  { code: 'PSD 25106', name: 'Penulisan Artikel Ilmiah', sks: 2, semester: '2' },
+  { code: 'PSD 25107', name: 'Manajemen dan Kebijakan Pendidikan Dasar', sks: 3, semester: '2' },
+  { code: 'PSD 25208', name: 'Pengembangan Pembelajaran IPA SD', sks: 3, semester: '2' },
+  { code: 'PSD 25209', name: 'Pengembangan Pembelajaran IPS SD', sks: 3, semester: '2' },
+  { code: 'PSD 25210', name: 'Pengembangan Pembelajaran Matematika SD', sks: 3, semester: '2' },
+  { code: 'PSD 25211', name: 'Pengembangan Pembelajaran Pendidikan Pancasila SD', sks: 3, semester: '2' },
+  { code: 'PSD 25212', name: 'Pengembangan Pembelajaran Bahasa dan Sastra Indonesia SD', sks: 3, semester: '2' },
+  { code: 'PSD 25213', name: 'Pengembangan Pembelajaran Seni Budaya dan Prakarya SD', sks: 3, semester: '2' },
+  { code: 'PSD 25214', name: 'Asesmen Pendidikan', sks: 3, semester: '3' },
+  { code: 'PSD 25315', name: 'Pengembangan Pembelajaran Berbasis Teknologi Digital di SD', sks: 3, semester: '3' },
+  { code: 'PSD 25316', name: 'Pendidikan Anak Berkebutuhan Khusus', sks: 3, semester: '3' },
+  { code: 'PSD 25317', name: 'Literasi Multidimensional', sks: 2, semester: '3' },
+  { code: 'PSD 25318', name: 'Pengembangan Pembelajaran Berbasis Muatan Lokal di SD', sks: 2, semester: '3' },
+  { code: 'PSD 25319', name: 'English for Children', sks: 2, semester: '3' },
+  { code: 'PSD 25320', name: 'Seminar Proposal Tugas Akhir Magister', sks: 2, semester: '3' },
+  { code: 'PSD 25321', name: 'Tugas Akhir Magister', sks: 6, semester: '4' },
+];
